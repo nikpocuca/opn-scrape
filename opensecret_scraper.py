@@ -6,12 +6,24 @@ import time
 from urllib.request import Request, urlopen
 import string
 
+
+# Import Python Libraries
+import urllib.request
+import time
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+import pdb
+
+
+
+page_num = 1
 PAUSE_TIME = 5
 INPUT_FILE, INPUT_SHEET = 'input.xlsx', 'input'
 OUTPUT_FILE, OUTPUT_SHEET = 'output.xlsx', 'output'
 INPUT_HEADERS = ['NAME','DIRECTOR_DETAIL_ID','FIRST_NAME','LAST_NAME']
 OUTPUT_HEADERS = ['CONTRIBUTOR_LNAME','CONTRIBUTOR_FNAME','OCCUPATION','YEAR','AMOUNT','RECIPIENT','PARTY']
-URL_TEMPLATE = 'https://www.opensecrets.org/donor-lookup/results?name=FIRST_NAME+LAST_NAME&cycle=&state=&zip=&employ=COMPANY&cand='
+URL_TEMPLATE = 'https://www.opensecrets.org/donor-lookup/results?name=FIRST_NAME+LAST_NAME&page=PAGE_NUM&cycle=&state=&zip=&employ=COMPANY&cand='
 '''
 TODO: handle multiple pages
 logic: 
@@ -52,7 +64,7 @@ def get_urls(file):
         company = clean(row[0])
         first_name = clean(row[2])
         last_name = clean(row[3])
-        url = URL_TEMPLATE.replace('COMPANY',company).replace('FIRST_NAME',first_name).replace('LAST_NAME',last_name)
+        url = URL_TEMPLATE.replace('COMPANY',company).replace('FIRST_NAME',first_name).replace('LAST_NAME',last_name).replace('PAGE_NUM', str(page_num))
         urls.append(url)
     wb.close()
     return urls, input_data_values
@@ -69,20 +81,94 @@ def clean(s):
     return s
     
 def run(file):
+
     df = pd.DataFrame()
     urls,input_data = get_urls(file)
+    
+    # Go through Each Row and Define a URL
     for i in range(len(urls)):
         print(urls[i])
-        soup = get_html(urls[i])
-        try:
-            data = get_data(soup,input_data[i])
-        except:
-            continue
-        for d in data:
-            df = df.append(d,ignore_index=True)
-        df = df.drop_duplicates()
-        time.sleep(PAUSE_TIME)
+
+        # Go Through Pages
+        Condition = True
+        while Condition:
+            
+            # Perform a request to check page index and compare with max index
+            
+            current_data = input_data[i]
+
+            employ_name = clean(current_data[0])
+            donor_name = clean(current_data[2]) + '+' + clean(current_data[3])
+
+            print(employ_name)
+            print(donor_name)
+            
+            input("Next\n\n")
+            
+            pdb.set_trace()
+            
+            current_index, page_final = ScrapeCurrentInfo(page_num,employ_name,donor_name)
+                
+            if(int(page_final.replace(",","")) > 500):
+                print("Max Page limit, can't scrape \n\n\n\n\n")
+                Condition = False
+                break
+
+            # Perform a request and get the actual data
+            soup = get_html(urls[i])
+            
+            try:
+                data = get_data(soup,input_data[i])
+            except:
+                continue
+            for d in data:
+                df = df.append(d,ignore_index=True)
+            df = df.drop_duplicates()
+            time.sleep(PAUSE_TIME)
+
+
+            if(current_index == page_final):
+                break
+
+            # increment page number by 1
+            if(current_index != page_final):
+                page_num += 1
+        
+
     return df
+
+
+
+def ScrapeCurrentInfo(page_num_input,employ_name,donor_name):
+
+
+    target_link = "https://www.opensecrets.org/donor-lookup/results?name="+ \
+        donor_name+"&cycle=&state=&zip=&employ="+ employ_name +"&cand=" \
+            + "&page=" + str(page_num_input)
+
+    # I am able to get the soup
+    response = requests.get(target_link)
+    soup = BeautifulSoup(response.text)
+
+
+    donor_look = soup.findAll("div",{"class":"DonorLookupSplash--results u-richtext u-mt4"})[0]
+
+    page_range = donor_look.find("strong")
+    current_index = page_range.contents[0].split(' ')[-1]
+
+    print(current_index)
+
+    current_page = donor_look.findAll("span",{"style":"font-size:14px;"})
+    page_final = current_page[0].contents[0].strip('.')
+
+
+    print(current_index)
+    print(page_final)
+
+    return current_index,page_final
+
+
+
 
 if __name__ == '__main__':
     df = run(INPUT_FILE)

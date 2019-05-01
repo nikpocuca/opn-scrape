@@ -40,6 +40,7 @@ def StartScrape():
 
     pageNum = 1
     Condition = True
+    
     while Condition:
 
 
